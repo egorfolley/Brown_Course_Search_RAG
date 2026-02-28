@@ -58,6 +58,36 @@ streamlit run frontend/app.py
 
 ---
 
+## Project Structure
+
+```
+Brown_course_search_RAG/
+├── etl/                        # Data ingestion & normalization
+│   ├── scrape_cab.py           # Scrapes Brown's Course Announcement Bulletin
+│   ├── scrape_bulletin.py      # Scrapes Courses@Brown for richer descriptions
+│   └── pipeline.py             # Orchestrates scrapers → normalizes → writes courses.json
+├── rag/                        # Retrieval-augmented generation core
+│   ├── embedder.py             # Encodes courses and builds/persists FAISS index
+│   ├── vector_store.py         # FAISS index wrapper (load + nearest-neighbour search)
+│   ├── search.py               # Hybrid search: BM25 + FAISS → reciprocal rank fusion
+│   └── generator.py            # Formats prompt and calls OpenAI to synthesize answer
+├── api/
+│   └── app.py                  # FastAPI app — POST /query endpoint
+├── frontend/
+│   └── streamlit_app.py        # Streamlit UI — search bar, filters, results display
+├── data/                       # Runtime-generated artifacts (git-ignored except .gitkeep)
+│   ├── courses.json            # Normalized course records (ETL output)
+│   ├── faiss.index             # Persisted FAISS flat index (embedder output)
+│   └── metadata.json           # Parallel course metadata list for FAISS results
+├── playground.ipynb            # Exploratory notebook for testing retrieval & generation
+├── requirements.txt
+└── README.md
+```
+
+Each package directory contains an `__init__.py`. The `data/` directory is populated at runtime and its generated files are git-ignored; only `.gitkeep` is tracked to preserve the directory.
+
+---
+
 ## Architecture
 
 ```
@@ -119,7 +149,7 @@ streamlit run frontend/app.py
   * [ ] Further UI modification to React if needed
 * [X] ClaudeCode prompts for initial development
 * [X] Design architecture
-* [ ] Scaffolding - project structure
+* [X] Scaffolding - project structure
 * [ ] CAB scraper
 * [ ] ETL pipeline and storage
 * [ ] RAG pipeline
