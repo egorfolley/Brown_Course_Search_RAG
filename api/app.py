@@ -18,26 +18,57 @@ Endpoint:
         body:  {"q": "...", "department": "..."}   (department is optional)
         returns: {"answer": str, "courses": [...]}
 
-Logs each query and wall-clock response time to stdout.
+Logs each query and wall-clock response time to stdout and logs/app.log
+(rotating, 5 MB max, 3 backups).
 """
 
+import json
 import logging
-import os
+import logging.handlers
+import sys
 import time
+from collections.abc import Callable
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from openai import OpenAI
 from pydantic import BaseModel
+
+# Ensure project root is on sys.path when running as a script (python api/app.py)
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from rag.vector_store import VectorStore
 from rag.search import HybridSearch
 
 load_dotenv()
 
+LOG_DIR  = Path(__file__).parent.parent / "logs"
+LOG_FILE = LOG_DIR / "app.log"
+
+def _setup_logging() -> None:
+    LOG_DIR.mkdir(exist_ok=True)
+    fmt = logging.Formatter("%(asctime)s  %(levelname)s  %(message)s")
+
+    stream = logging.StreamHandler(sys.stdout)
+    stream.setFormatter(fmt)
+
+    # Rotate at 5 MB, keep 3 backups
+    rotating = logging.handlers.RotatingFileHandler(
+        LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    rotating.setFormatter(fmt)
+
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(stream)
+    root.addHandler(rotating)
+
+_setup_logging()
 log = logging.getLogger("api")
-logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
 
 # ---------------------------------------------------------------------------
 # Data paths
@@ -50,59 +81,74 @@ COURSES_FILE  = DATA_DIR / "courses.json"
 INDEX_FILE    = DATA_DIR / "faiss.index"
 META_FILE     = DATA_DIR / "metadata.json"
 
+Course = dict[str, Any]
+
 
 # ---------------------------------------------------------------------------
 # Pipeline orchestration
 # ---------------------------------------------------------------------------
 
+def _scrape_and_save(scrape_fn: Callable[[], list[Course]], output_path: Path) -> None:
+    """Call scrape_fn(), log progress, and persist the result as JSON."""
+    log.info("  Running %s…", scrape_fn.__name__)
+    courses: list[Course] = scrape_fn()
+    DATA_DIR.mkdir(exist_ok=True)
+    output_path.write_text(json.dumps(courses, ensure_ascii=False, indent=2), encoding="utf-8")
+    log.info("  Saved %d courses → %s", len(courses), output_path.name)
+
+
 def _ensure_data() -> None:
     """Run any missing pipeline steps before serving."""
 
+    # Step 1: Bulletin scrape
     if not BULLETIN_FILE.exists():
-        log.info("bulletin_courses.json not found — scraping bulletin.brown.edu…")
-        from etl.scrape_bulletin import main as scrape_bulletin
-        scrape_bulletin()
+        log.info("[1/4] bulletin_courses.json missing — scraping bulletin.brown.edu…")
+        from etl.scrape_bulletin import scrape_all as _scrape_bulletin
+        _scrape_and_save(_scrape_bulletin, BULLETIN_FILE)
     else:
-        log.info("bulletin_courses.json already exists, skipping Bulletin scrape.")
+        log.info("[1/4] bulletin_courses.json exists — skipping.")
 
+    # Step 2: CAB scrape
     if not CAB_FILE.exists():
-        log.info("cab_courses.json not found — scraping cab.brown.edu (launches Chromium)…")
-        from etl.scrape_cab import main as scrape_cab
-        scrape_cab()
+        log.info("[2/4] cab_courses.json missing — scraping cab.brown.edu (launches Chromium)…")
+        from etl.scrape_cab import scrape_all as _scrape_cab
+        _scrape_and_save(_scrape_cab, CAB_FILE)
     else:
-        log.info("cab_courses.json already exists, skipping CAB scrape.")
+        log.info("[2/4] cab_courses.json exists — skipping.")
 
+    # Step 3: ETL merge
     if not COURSES_FILE.exists():
-        log.info("courses.json not found — running ETL merge pipeline…")
+        log.info("[3/4] courses.json missing — running ETL merge pipeline…")
         from etl.pipeline import run as run_pipeline
-        run_pipeline()
+        merged: list[Course] = run_pipeline()
+        log.info("  Merged %d courses → courses.json", len(merged))
     else:
-        log.info("courses.json already exists, skipping ETL merge.")
+        log.info("[3/4] courses.json exists — skipping.")
 
+    # Step 4: Embeddings + FAISS index
     if not INDEX_FILE.exists() or not META_FILE.exists():
-        log.info("FAISS index not found — building embeddings…")
+        log.info("[4/4] FAISS index missing — building embeddings…")
         from rag.embedder import run as run_embedder
         from rag.vector_store import build as build_store
         embeddings, courses = run_embedder()
+        log.info("  Encoded %d courses — building FAISS index…", len(courses))
         store = build_store(embeddings, courses)
         store.save()
-        log.info("FAISS index saved.")
+        log.info("  FAISS index saved → faiss.index + metadata.json")
     else:
-        log.info("FAISS index already exists, skipping embedding step.")
+        log.info("[4/4] FAISS index exists — skipping.")
 
 
 # ---------------------------------------------------------------------------
-# App + startup state
+# App + lifespan
 # ---------------------------------------------------------------------------
-
-app = FastAPI(title="Brown Course Search")
 
 _search: HybridSearch | None = None
 _openai: OpenAI | None = None
 
 
-@app.on_event("startup")
-def startup() -> None:
+@asynccontextmanager
+async def lifespan(_: FastAPI):
     global _search, _openai
 
     log.info("Loading FAISS index and metadata…")
@@ -111,9 +157,15 @@ def startup() -> None:
 
     log.info("Building BM25 corpus…")
     _search = HybridSearch(store)
-    log.info("  Ready.")
+    log.info("  BM25 ready.")
 
-    _openai = OpenAI()   # reads OPENAI_API_KEY from env
+    _openai = OpenAI()  # reads OPENAI_API_KEY from env
+    log.info("  OpenAI client ready.")
+
+    yield  # server runs here
+
+
+app = FastAPI(title="Brown Course Search", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------------------
@@ -149,12 +201,12 @@ SYSTEM_PROMPT = (
 )
 
 
-def _build_context(courses: list[dict]) -> str:
+def _build_context(courses: list[Course]) -> str:
     lines = []
     for c in courses:
         lines.append(
             f"- {c['course_code']}: {c['title']} ({c.get('department', '')})\n"
-            f"  {c.get('description', '')[:200]}"
+            f"  {str(c.get('description', ''))[:200]}"
         )
     return "\n".join(lines)
 
@@ -171,14 +223,20 @@ def query(req: QueryRequest) -> QueryResponse:
     t0 = time.perf_counter()
 
     filters = {"department": req.department} if req.department else None
-    results = _search.query(req.q, top_k=5, filters=filters)
+    log.info("Searching: q=%r  dept=%r", req.q, req.department)
+
+    assert _search is not None, "Search not initialised"
+    results: list[Course] = _search.query(req.q, top_k=5, filters=filters)
 
     if not results:
         elapsed = time.perf_counter() - t0
         log.info("query=%r  dept=%r  hits=0  %.2fs", req.q, req.department, elapsed)
         return QueryResponse(answer="No matching courses found.", courses=[])
 
+    log.info("  %d results — calling OpenAI…", len(results))
     context = _build_context(results)
+
+    assert _openai is not None, "OpenAI client not initialised"
     completion = _openai.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -188,15 +246,15 @@ def query(req: QueryRequest) -> QueryResponse:
         max_tokens=300,
         temperature=0.3,
     )
-    answer = completion.choices[0].message.content.strip()
+    answer = (completion.choices[0].message.content or "").strip()
 
     courses = [
         CourseResult(
-            code=c["course_code"],
-            title=c.get("title", ""),
-            department=c.get("department", ""),
-            similarity=round(c["_hybrid_score"], 4),
-            source=c.get("source", ""),
+            code=str(c["course_code"]),
+            title=str(c.get("title", "")),
+            department=str(c.get("department", "")),
+            similarity=round(float(c["_hybrid_score"]), 4),
+            source=str(c.get("source", "")),
         )
         for c in results
     ]
@@ -212,7 +270,7 @@ def query(req: QueryRequest) -> QueryResponse:
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    import uvicorn
-
+    log.info("=== Brown Course Search — starting up ===")
     _ensure_data()
+    log.info("=== All data ready — launching server on http://0.0.0.0:8000 ===")
     uvicorn.run("api.app:app", host="0.0.0.0", port=8000, reload=False)
