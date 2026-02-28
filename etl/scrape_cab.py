@@ -21,8 +21,10 @@ Output: data/cab_courses.json
 
 import json
 import logging
+import os
 import re
 import time
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -37,7 +39,33 @@ BASE_URL = "https://cab.brown.edu/ribbit/index.cgi"
 
 # Term code format: YYYYTT where TT = 10 (Spring), 20 (Summer), 30 (Fall).
 # Verify at cab.brown.edu — the page title shows the active term.
-CURRENT_TERM = "202510"  # Spring 2025
+def _default_term() -> str:
+    today = date.today()
+    if today.month <= 5:
+        term_suffix = "10"  # Spring
+    elif today.month <= 7:
+        term_suffix = "20"  # Summer
+    else:
+        term_suffix = "30"  # Fall
+    return f"{today.year}{term_suffix}"
+
+
+CURRENT_TERM = os.getenv("CAB_TERM", _default_term())
+ACTIVE_TERM = CURRENT_TERM
+
+
+def _candidate_terms(seed_term: str) -> list[str]:
+    year = int(seed_term[:4])
+    suffixes = ["10", "20", "30"]
+    candidates = [seed_term]
+
+    for y in (year, year - 1, year + 1):
+        for suffix in suffixes:
+            term = f"{y}{suffix}"
+            if term not in candidates:
+                candidates.append(term)
+
+    return candidates
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 OUTPUT_FILE = DATA_DIR / "cab_courses.json"
@@ -111,18 +139,25 @@ def fetch_subjects() -> list[str]:
 
     Ribbit response: JSON array of objects with 'key' (e.g. "CSCI") and 'name'.
     """
-    text = _get_session().get({"page": "listsubjects.rjs", "Term": CURRENT_TERM})
-    if not text:
-        log.error("Could not fetch subject list; falling back to empty list.")
-        return []
-    try:
-        data = json.loads(text)
-        subjects = [entry["key"] for entry in data if "key" in entry]
-        log.info("Found %d subjects.", len(subjects))
-        return subjects
-    except (ValueError, KeyError) as exc:
-        log.error("Failed to parse subject list: %s", exc)
-        return []
+    global ACTIVE_TERM
+
+    for term in _candidate_terms(CURRENT_TERM):
+        text = _get_session().get({"page": "listsubjects.rjs", "Term": term})
+        if not text:
+            continue
+
+        try:
+            data = json.loads(text)
+            subjects = [entry["key"] for entry in data if "key" in entry]
+            if subjects:
+                ACTIVE_TERM = term
+                log.info("Found %d subjects using term %s.", len(subjects), ACTIVE_TERM)
+                return subjects
+        except (ValueError, KeyError) as exc:
+            log.warning("Failed to parse subject list for term %s: %s", term, exc)
+
+    log.error("Could not fetch subject list for any candidate term; falling back to empty list.")
+    return []
 
 
 def fetch_course_codes(subject: str) -> list[str]:
@@ -131,7 +166,7 @@ def fetch_course_codes(subject: str) -> list[str]:
 
     Ribbit response: JSON array of objects with 'key' (full code) and 'name' (title).
     """
-    text = _get_session().get({"page": "listcourses.rjs", "subject": subject, "Term": CURRENT_TERM})
+    text = _get_session().get({"page": "listcourses.rjs", "subject": subject, "Term": ACTIVE_TERM})
     if not text:
         return []
     try:
@@ -149,7 +184,7 @@ def fetch_course_detail(code: str) -> Optional[str]:
     Ribbit response: XML like <result><![CDATA[<div class="courseblock">...</div>]]></result>
     BeautifulSoup extracts the inner text, which is the HTML fragment.
     """
-    text = _get_session().get({"page": "getcourse.rjs", "code": code, "Term": CURRENT_TERM})
+    text = _get_session().get({"page": "getcourse.rjs", "code": code, "Term": ACTIVE_TERM})
     if not text:
         return None
     # The outer document is minimal XML; BS4's html.parser handles it fine.
@@ -251,7 +286,7 @@ def scrape_all() -> list[dict]:
     """Scrape every subject in the catalog and return all course dicts."""
     subjects = fetch_subjects()
     if not subjects:
-        log.error("No subjects found. Check CURRENT_TERM (%s) and connectivity.", CURRENT_TERM)
+        log.error("No subjects found. Check CAB_TERM/CURRENT_TERM (%s) and connectivity.", CURRENT_TERM)
         return []
 
     all_courses: list[dict] = []
