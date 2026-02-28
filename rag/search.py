@@ -14,6 +14,7 @@ Public API:
 
 import numpy as np
 from rank_bm25 import BM25Okapi
+from typing import Any
 
 from rag.embedder import MODEL_NAME, SentenceTransformer
 from rag.vector_store import VectorStore
@@ -55,8 +56,8 @@ class HybridSearch:
         text: str,
         top_k: int = 10,
         alpha: float = 0.5,
-        filters: dict | None = None,
-    ) -> list[dict]:
+        filters: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
         """
         Hybrid search over all courses.
 
