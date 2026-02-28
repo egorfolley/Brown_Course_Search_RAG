@@ -1,193 +1,166 @@
-# Brown Course Search: RAG-powered academic course discovery
+# Brown Course Search
 
-A RAG-powered academic course search tool that scrapes Brown University course data from 2 sources, and stores in a vectorDB (for RAG applications)
+RAG-powered semantic search for Brown University courses. Combines dual-source scraping (Bulletin + CAB), hybrid retrieval (FAISS + BM25), and LLM synthesis to deliver intelligent course recommendations.
 
-## Technical Setup
+## Quick Start
 
-### Stack
-
-| Layer           | Choice                                       | Rationale                                                         |
-| --------------- | -------------------------------------------- | ----------------------------------------------------------------- |
-| Backend API     | FastAPI + Uvicorn                            | Async-native, fast, auto-generates OpenAPI docs                   |
-| Frontend        | Streamlit                                    | Rapid prototyping; can migrate to React later                     |
-| Embedding model | `all-MiniLM-L6-v2` (sentence-transformers) | Strong quality/speed tradeoff; 384-dim, runs locally              |
-| Vector store    | FAISS (CPU)                                  | In-process, no infra needed; easy to persist to disk              |
-| Lexical search  | BM25 (rank-bm25)                             | Hybrid retrieval: catches exact keyword matches embeddings miss   |
-| Scraping (CAB)  | Playwright + BeautifulSoup4                  | CAB sits behind AWS WAF; Playwright bypasses the JS challenge     |
-| Scraping (Bul.) | Requests + BeautifulSoup4                    | bulletin.brown.edu is fully static HTML — no JS rendering needed |
-| LLM generation  | OpenAI API                                   | Handles final answer synthesis from retrieved context             |
-| Data validation | Pydantic v2                                  | FastAPI-native; validates course schema and API payloads          |
-
-### Retrieval Strategy
-
-Hybrid search: BM25 score + cosine similarity from FAISS are combined (reciprocal rank fusion or weighted sum) before passing top-k chunks to the LLM for answer generation.
-
-**Selection description:**
-
-Hybrid search matters because semantic search and keyword search fail in different ways:
-
-* **FAISS** is great at understanding meaning ("machine learning courses" matches "intro to neural networks") but can miss exact terms. If a student searches "CSCI0320", pure semantic search might rank it lower than conceptually similar courses
-* **BM25** is great at exact matches ("CSCI0320", "Friday", "3 PM") but doesn't understand synonyms or intent. "Philosophy about the nature of reality" won't match "metaphysics" well.
-
-Combining both covers both failure modes. A course that scores high on both semantic relevance AND keyword match is almost certainly the right result. The fusion method (weighted sum or reciprocal rank) just determines how you blend the two ranked lists into one final ranking before sending top-k to the LLM.
-
-For this assignment specifically, look at the example queries: query 1 needs exact code matching (BM25), query 2 needs semantic understanding (FAISS), query 4 needs both ("Fridays after 3 pm" is keyword, "machine learning" is semantic). Hybrid search handles all four naturally.
-
-### Prerequisites
-
-- Python 3.11+
-- An OpenAI API key (set in `.env` as `OPENAI_API_KEY`)
-
-### Installation
+**Prerequisites:** Python 3.11+, OpenAI API key
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
+# Setup
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-playwright install chromium      # for JS-rendered scraping
-```
+playwright install chromium
 
-### Environment
+# Configure (create .env)
+echo "OPENAI_API_KEY=sk-..." > .env
 
-Create a `.env` file in the project root:
-
-```
-OPENAI_API_KEY=sk-...
-```
-
-### Running
-
-All commands are run from the project root with the virtualenv active.
-
-**Step 1 — Start the API** *(builds all data automatically on first run)*
-
-```bash
+# Run backend (builds data on first run)
 python app/app.py
-# Scrapes Bulletin (~5 min) and CAB (~15 min, launches Chromium) if data is missing
-# Builds embeddings + FAISS index if missing
-# Starts API on http://0.0.0.0:8000
-# Interactive docs at http://127.0.0.1:8000/docs
-```
 
-Each pipeline step is skipped if its output file already exists. To force a fresh scrape, delete the relevant files from `data/` before running.
-
-**Step 2 — Start the frontend** *(separate terminal)*
-
-```bash
+# Run frontend (new terminal)
 streamlit run frontend/ui.py
 ```
 
-### API reference
+## Tech Stack
 
-`POST /query`
+| Component       | Choice             | Why                                                  |
+| --------------- | ------------------ | ---------------------------------------------------- |
+| Backend         | FastAPI + Uvicorn  | Async-native, auto-docs, fast                        |
+| Frontend        | Streamlit          | Rapid prototyping with minimal code                  |
+| Embeddings      | all-MiniLM-L6-v2   | Best speed/quality trade-off, runs locally (384-dim) |
+| Vector Store    | FAISS (CPU)        | In-process, disk-persistent, no infrastructure       |
+| Keyword Search  | BM25               | Catches exact matches (codes, times, keywords)       |
+| Scraping (CAB)  | Playwright + BS4   | Bypasses AWS WAF via browser context                 |
+| Scraping (Bul.) | Requests + BS4     | Static HTML, no JS needed                            |
+| LLM             | OpenAI GPT-4o-mini | Answer synthesis from retrieved context              |
+
+## How It Works
+
+**Hybrid Retrieval Strategy**
+
+Combines two complementary search methods:
+
+- **FAISS (semantic):** Understands intent and meaning→ *"machine learning"* matches *"neural networks"*, *"deep learning"*
+- **BM25 (lexical):** Exact keyword/code matching
+  → *"CSCI0320"*, *"Friday 3pm"* matches precisely
+
+Both rankings are fused via reciprocal rank fusion, then top-k results are sent to the LLM for natural language synthesis. This handles both semantic queries (*"philosophy of reality"* → metaphysics) and precise lookups (*"CSCI0320"*).
+
+## Pipeline Overview
+
+When you run `python app/app.py`, the system automatically:
+
+1. **Scrapes** Brown Bulletin and CAB
+2. **Merges** both sources into unified schema
+3. **Embeds** course descriptions with `all-MiniLM-L6-v2`
+4. **Builds** FAISS index + BM25 corpus
+5. **Serves** API on `http://localhost:8000`
+
+Each step is **skipped** if its output already exists. To force rebuild: delete files in `data/`.
+
+## API Usage
+
+**Endpoint:** `POST /query`
 
 ```json
-// request
-{ "q": "machine learning courses on Fridays", "department": "Computer Science" }
+// Request
+{ 
+  "q": "machine learning courses on Fridays", 
+  "department": "Computer Science"  // optional
+}
 
-// response
+// Response
 {
-  "answer": "The best match is CSCI 1951A ...",
+  "answer": "The best match is CSCI 1951A...",
   "courses": [
-    { "code": "CSCI1951A", "title": "Data Science", "department": "Computer Science",
-      "similarity": 0.87, "source": "Bulletin" }
+    { 
+      "code": "CSCI1951A", 
+      "title": "Data Science", 
+      "department": "Computer Science",
+      "similarity": 0.87, 
+      "source": "Bulletin" 
+    }
   ]
 }
 ```
 
-`department` is optional. Omit it to search across all departments.
-
-Logs printed to stdout per request:
-
-```
-INFO  query='machine learning on Fridays'  dept='Computer Science'  hits=5  0.43s
-```
-
----
+Interactive docs: `http://127.0.0.1:8000/docs`
 
 ## Project Structure
 
 ```
 Brown_course_search_RAG/
-├── etl/                        # Data ingestion & normalization
-│   ├── scrape_cab.py           # Scrapes Brown's Course Announcement Bulletin
-│   ├── scrape_bulletin.py      # Scrapes Courses@Brown for richer descriptions
-│   └── pipeline.py             # Orchestrates scrapers → normalizes → writes courses.json
-├── rag/                        # Retrieval-augmented generation core
-│   ├── embedder.py             # Encodes courses and builds/persists FAISS index
-│   ├── vector_store.py         # FAISS index wrapper (load + nearest-neighbour search)
-│   ├── search.py               # Hybrid search: BM25 + FAISS → reciprocal rank fusion
-│   └── generator.py            # Formats prompt and calls OpenAI to synthesize answer
-├── api/
-│   └── app.py                  # FastAPI app — POST /query endpoint
+├── app/
+│   └── app.py                  # FastAPI server + startup orchestration
+├── etl/
+│   ├── scrape_bulletin.py      # Bulletin scraper (Requests + BS4)
+│   ├── scrape_cab.py           # CAB scraper (Playwright + BS4)
+│   └── pipeline.py             # Merge + normalize → courses.json
+├── rag/
+│   ├── embedder.py             # Encode text → FAISS index
+│   ├── vector_store.py         # FAISS wrapper (save/load/search)
+│   └── search.py               # Hybrid: FAISS + BM25 → fused ranking
 ├── frontend/
-│   └── ui.py                   # Streamlit UI — search bar, filters, results display
-├── data/                       # Runtime-generated artifacts (git-ignored except .gitkeep)
-│   ├── courses.json            # Normalized course records (ETL output)
-│   ├── faiss.index             # Persisted FAISS flat index (embedder output)
-│   └── metadata.json           # Parallel course metadata list for FAISS results
-├── playground.ipynb            # Exploratory notebook for testing retrieval & generation
-├── requirements.txt
-└── README.md
+│   └── ui.py                   # Streamlit interface
+└── data/                       # Generated at runtime (git-ignored)
+    ├── courses.json            # Merged course records
+    ├── faiss.index             # Vector index
+    └── metadata.json           # Parallel metadata for lookups
 ```
 
-Each package directory contains an `__init__.py`. The `data/` directory is populated at runtime and its generated files are git-ignored; only `.gitkeep` is tracked to preserve the directory.
-
----
-
-## Architecture
+## Architecture Flow
 
 ```
-┌─────────────────────────────────────┐
-│               ETL                   │
-│  CAB scraper + Courses@Brown scraper│
-│        → normalizer                 │
-│        → data/courses.json          │
-└──────────────────┬──────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────┐
-│             Embedder                │
-│  sentence-transformers              │
-│  (all-MiniLM-L6-v2, 384-dim)       │
-│        → data/faiss.index           │
-└──────────────────┬──────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────┐
-│          Hybrid Search              │
-│  FAISS (semantic) + BM25 (lexical) │
-│  + metadata filters (dept, time…)  │
-│  → reciprocal rank fusion → top-k  │
-└──────────────────┬──────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────┐
-│           FastAPI Backend           │
-│  POST /query                        │
-│  → top-k context + LLM generation  │
-│  → JSON response                    │
-└──────────────────┬──────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────┐
-│         Streamlit Frontend          │
-│  Search bar + filters               │
-│  → displays ranked results + answer │
-└─────────────────────────────────────┘
+┌──────────────┐
+│ ETL Pipeline │  Scrape Bulletin + CAB → merge → courses.json
+└──────┬───────┘
+       ↓
+┌──────────────┐
+│   Embedder   │  Encode descriptions → FAISS index (384-dim)
+└──────┬───────┘
+       ↓
+┌──────────────┐
+│ Hybrid Search│  Query → FAISS (semantic) + BM25 (lexical) → top-k
+└──────┬───────┘
+       ↓
+┌──────────────┐
+│  LLM + API   │  Context + prompt → GPT-4o-mini → JSON response
+└──────┬───────┘
+       ↓
+┌──────────────┐
+│  Streamlit   │  Display answer + retrieved courses
+└──────────────┘
 ```
 
-**ETL** — Two scrapers feed a merge pipeline. `scrape_bulletin.py` targets `bulletin.brown.edu` with plain Requests+BS4 (fully static HTML) and captures course code, title, description, prerequisites, instructor, and meeting times from the offerings table. `scrape_cab.py` targets `cab.brown.edu` via Playwright (required to bypass AWS WAF) and pulls catalog data from CourseLeaf's Ribbit API. `pipeline.py` merges both on normalized course code: Bulletin is the base record (richer schedule data); CAB back-fills any fields left empty. The `source` field on each record reflects provenance: `"Bulletin"`, `"CAB"`, or `"CAB+Bulletin"`.
+**Step-by-Step Explanation:**
 
-**Embedder** — Runs once (or on data refresh) to encode every course description with `all-MiniLM-L6-v2` and build a FAISS flat index. The index and a parallel metadata list are persisted to disk so the API loads them at startup without re-embedding.
+1. **ETL Pipeline**
 
-**Hybrid Search** — At query time, BM25 scores the corpus for lexical relevance while FAISS scores against the query embedding for semantic relevance. The two ranked lists are fused (reciprocal rank fusion) and metadata filters (department, time slot, credit hours) are applied before the top-k results are selected.
+   - `scrape_bulletin.py` pulls course data from Brown's Bulletin (static HTML)
+   - `scrape_cab.py` pulls from CAB using Playwright (bypasses AWS WAF)
+   - `pipeline.py` merges both sources by course code, preferring Bulletin for schedule data
+2. **Embedder**
 
-**API** — `POST /query` accepts `{"q": str, "department": str | None}`. On startup, FastAPI loads the FAISS index and builds the BM25 corpus once so every request is fast. Each request runs hybrid search (top-5), assembles a context string from those results, calls `gpt-4o-mini` for a 2-4 sentence answer, and returns `{"answer": str, "courses": [{code, title, department, similarity, source}]}`. Query text, department filter, hit count, and wall-clock time are logged to stdout.
+   - Encodes each course description into a 384-dim vector using `all-MiniLM-L6-v2`
+   - Builds FAISS flat index for fast similarity search
+   - Saves index + metadata to disk for reuse
+3. **Hybrid Search**
 
-**Frontend** — Streamlit provides a search bar and sidebar filters that call the FastAPI backend. Results are rendered as an expandable course list alongside the LLM-generated summary.
+   - User query is scored by FAISS (semantic similarity) and BM25 (keyword matching)
+   - Rankings are fused using reciprocal rank fusion
+   - Top-k results balance meaning and precision
+4. **API + LLM**
 
----
+   - FastAPI loads index and corpus at startup
+   - `/query` endpoint takes query + optional department filter
+   - Top 5 courses become context for GPT-4o-mini
+   - LLM generates 2-4 sentence answer
+5. **Frontend**
+
+   - Streamlit UI with search bar and department dropdown
+   - Submits queries to API, displays answer + retrieved courses
+   - Shows similarity scores and sources for transparency
 
 ## TO DO
 
@@ -203,6 +176,6 @@ Each package directory contains an `__init__.py`. The `data/` directory is popul
 * [X] RAG pipeline
 * [X] Test solutions in Playground notebook
 * [X] Backend API
-* [ ] UI
-* [ ] Polish - deployment + docs + report
+* [X] UI
+* [X] Polish - deployment + docs + report
 * [ ] Loom video
