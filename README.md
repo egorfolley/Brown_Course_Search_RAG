@@ -47,22 +47,70 @@ pip install -r requirements.txt
 playwright install chromium      # for JS-rendered scraping
 ```
 
+### Environment
+
+Create a `.env` file in the project root:
+
+```
+OPENAI_API_KEY=sk-...
+```
+
 ### Running
 
+All commands are run from the project root with the virtualenv active.
+
+**Step 1 — Start the API** *(builds all data automatically on first run)*
+
 ```bash
-# 1. Scrape & build data/courses.json  (run once, or on data refresh)
-python -m etl.scrape_bulletin        # → data/bulletin_courses.json
-python -m etl.scrape_cab             # → data/cab_courses.json  (launches Chromium)
-python -c "from etl.pipeline import run; run()"  # → data/courses.json
+python api/app.py
+# Scrapes Bulletin (~5 min) and CAB (~15 min, launches Chromium) if data is missing
+# Builds embeddings + FAISS index if missing
+# Starts API on http://0.0.0.0:8000
+# Interactive docs at http://127.0.0.1:8000/docs
+```
 
-# 2. Build FAISS index
-python -m rag.embedder               # → data/faiss.index + data/metadata.json
+Each pipeline step is skipped if its output file already exists. To force a fresh scrape, delete the relevant files from `data/` before running.
 
-# 3. Backend (from project root)
-uvicorn api.app:app --reload
+**Step 2 — Start the frontend** *(separate terminal)*
 
-# 4. Frontend (separate terminal)
+```bash
 streamlit run frontend/streamlit_app.py
+```
+
+**Manual step-by-step** *(optional, if you want to run stages independently)*
+
+```bash
+python -m etl.scrape_bulletin   # → data/bulletin_courses.json  (~5 min)
+python -m etl.scrape_cab        # → data/cab_courses.json       (launches Chromium, ~15 min)
+python -c "from etl.pipeline import run; run()"  # → data/courses.json
+python -m rag.embedder          # → data/faiss.index + data/metadata.json
+uvicorn api.app:app --reload    # serve without re-running pipeline
+```
+
+### API reference
+
+`POST /query`
+
+```json
+// request
+{ "q": "machine learning courses on Fridays", "department": "Computer Science" }
+
+// response
+{
+  "answer": "The best match is CSCI 1951A ...",
+  "courses": [
+    { "code": "CSCI1951A", "title": "Data Science", "department": "Computer Science",
+      "similarity": 0.87, "source": "Bulletin" }
+  ]
+}
+```
+
+`department` is optional. Omit it to search across all departments.
+
+Logs printed to stdout per request:
+
+```
+INFO  query='machine learning on Fridays'  dept='Computer Science'  hits=5  0.43s
 ```
 
 ---
@@ -145,7 +193,7 @@ Each package directory contains an `__init__.py`. The `data/` directory is popul
 
 **Hybrid Search** — At query time, BM25 scores the corpus for lexical relevance while FAISS scores against the query embedding for semantic relevance. The two ranked lists are fused (reciprocal rank fusion) and metadata filters (department, time slot, credit hours) are applied before the top-k results are selected.
 
-**API** — A single `POST /query` endpoint in FastAPI accepts a natural-language query plus optional filter parameters, runs hybrid search, and passes the top-k course snippets as context to the OpenAI LLM to synthesize a final answer. Returns both the ranked course list and the generated response.
+**API** — `POST /query` accepts `{"q": str, "department": str | None}`. On startup, FastAPI loads the FAISS index and builds the BM25 corpus once so every request is fast. Each request runs hybrid search (top-5), assembles a context string from those results, calls `gpt-4o-mini` for a 2-4 sentence answer, and returns `{"answer": str, "courses": [{code, title, department, similarity, source}]}`. Query text, department filter, hit count, and wall-clock time are logged to stdout.
 
 **Frontend** — Streamlit provides a search bar and sidebar filters that call the FastAPI backend. Results are rendered as an expandable course list alongside the LLM-generated summary.
 
@@ -162,9 +210,9 @@ Each package directory contains an `__init__.py`. The `data/` directory is popul
 * [X] CAB scraper
 * [X] Bulletin scraper
 * [X] ETL pipeline and storage
-* [ ] RAG pipeline
+* [X] RAG pipeline
 * [ ] Test solutions in Playground notebook
-* [ ] Backend API
+* [X] Backend API
 * [ ] UI
 * [ ] Polish - deployment + docs + report
 * [ ] Loom video
