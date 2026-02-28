@@ -115,6 +115,26 @@ Each step is **skipped** if its output already exists. To force rebuild: delete 
 
 Interactive docs: `http://127.0.0.1:8000/docs`
 
+## Example Queries
+
+Test your system with these queries (from assignment):
+
+```
+1. "Who teaches APMA2680, and when does the class meet?"
+   → Exact course code match returns instructor + meeting times
+
+2. "I am interested in Philosophy courses related to metaphysics. Which ones do you recommend?"
+   → Semantic search + optional department filtering
+
+3. "Find a Brown Bulletin course similar to CSCI0320 from CAB."
+   → Hybrid search with source filtering
+
+4. "List all CAB courses taught on Fridays after 3 pm related to machine learning."
+   → Keyword + semantic search + filtering
+```
+
+All queries are answered via the `/query` endpoint or Streamlit UI.
+
 ## Project Structure
 
 ```
@@ -221,6 +241,34 @@ tests/test_search.py::TestVectorStore::test_semantic_search PASSED
 tests/test_api.py::TestQueryEndpoint::test_query_endpoint_exists PASSED
 ```
 
+## Adding Additional Datasets
+
+To integrate a new course data source:
+
+1. **Create a scraper** in `etl/`:
+   ```python
+   # etl/scrape_newsource.py
+   def scrape_all() -> list[dict]:
+       """Return courses matching schema: course_code, title, ..., source='NewSource'"""
+       # Your scraping logic here
+       return courses
+   ```
+
+2. **Update ETL pipeline** in `etl/pipeline.py`:
+   ```python
+   from etl.scrape_newsource import scrape_all as scrape_newsource
+   
+   # In run():
+   newsource_courses = scrape_newsource()  # Load & merge like CAB/Bulletin
+   ```
+
+3. **Rebuild data**:
+   ```bash
+   # Force fresh scrape
+   make clean
+   python app/app.py
+   ```
+
 ## TO DO
 
 * [X] Technical setup - choose embedding model, vector store, LLM, scraping tools/ETL
@@ -237,6 +285,6 @@ tests/test_api.py::TestQueryEndpoint::test_query_endpoint_exists PASSED
 * [X] Backend API
 * [X] UI
 * [X] Polish - deployment + docs + report
-* [ ] Docker
-* [ ] Tests
+* [X] Docker
+* [X] Tests
 * [ ] Loom video

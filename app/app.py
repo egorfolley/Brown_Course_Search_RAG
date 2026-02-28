@@ -182,6 +182,8 @@ class CourseResult(BaseModel):
     code: str
     title: str
     department: str
+    instructor: str
+    meeting_times: str
     similarity: float
     source: str
 
@@ -189,6 +191,7 @@ class CourseResult(BaseModel):
 class QueryResponse(BaseModel):
     answer: str
     courses: list[CourseResult]
+    detected_code: str | None = None  # For debugging: detected course code from query
 
 
 # ---------------------------------------------------------------------------
@@ -197,19 +200,54 @@ class QueryResponse(BaseModel):
 
 SYSTEM_PROMPT = (
     "You are a helpful Brown University course advisor. "
-    "Answer the student's question using only the courses listed below. "
-    "Be concise (2-4 sentences). If no course matches, say so plainly."
+    "Answer the student's question using ONLY the courses listed below in the context. "
+    "If the user asks about a specific course code (e.g., 'Who teaches ENGN0030?'), "
+    "and that course appears in the retrieved results, state its instructor and meeting times directly. "
+    "If instructor or meeting times are missing from the data, explicitly state they are not available. "
+    "Do not claim a course is missing if it appears in the retrieved context. "
+    "Be concise (2-4 sentences). If no course matches the query, say so plainly."
 )
 
 
 def _build_context(courses: list[Course]) -> str:
+    """Build a structured context block for the LLM with all course metadata."""
     lines = []
     for c in courses:
-        lines.append(
-            f"- {c['course_code']}: {c['title']} ({c.get('department', '')})\n"
-            f"  {str(c.get('description', ''))[:200]}"
-        )
-    return "\n".join(lines)
+        code = c.get('course_code', 'N/A')
+        title = c.get('title', 'N/A')
+        department = c.get('department', 'N/A')
+        instructor = c.get('instructor', '')
+        meeting_times = c.get('meeting_times', '')
+        prerequisites = c.get('prerequisites', '')
+        source = c.get('source', 'N/A')
+        description = c.get('description', '')
+        
+        # Build structured block
+        block = f"Course Code: {code}\n"
+        block += f"Title: {title}\n"
+        block += f"Department: {department}\n"
+        
+        if instructor:
+            block += f"Instructor: {instructor}\n"
+        else:
+            block += "Instructor: Not available\n"
+        
+        if meeting_times:
+            block += f"Meeting Times: {meeting_times}\n"
+        else:
+            block += "Meeting Times: Not available\n"
+        
+        if prerequisites:
+            block += f"Prerequisites: {prerequisites}\n"
+        
+        block += f"Source: {source}\n"
+        
+        if description:
+            block += f"Description: {description[:300]}"
+        
+        lines.append(block)
+    
+    return "\n---\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -227,12 +265,19 @@ def query(req: QueryRequest) -> QueryResponse:
     log.info("Searching: q=%r  dept=%r", req.q, req.department)
 
     assert _search is not None, "Search not initialised"
-    results: list[Course] = _search.query(req.q, top_k=5, filters=filters)
+    results, detected_code = _search.query(req.q, top_k=5, filters=filters)
+
+    if detected_code:
+        log.info("  Detected course code: %s", detected_code)
 
     if not results:
         elapsed = time.perf_counter() - t0
         log.info("query=%r  dept=%r  hits=0  %.2fs", req.q, req.department, elapsed)
-        return QueryResponse(answer="No matching courses found.", courses=[])
+        return QueryResponse(
+            answer="No matching courses found.",
+            courses=[],
+            detected_code=detected_code
+        )
 
     log.info("  %d results — calling OpenAI…", len(results))
     context = _build_context(results)
@@ -254,6 +299,8 @@ def query(req: QueryRequest) -> QueryResponse:
             code=str(c["course_code"]),
             title=str(c.get("title", "")),
             department=str(c.get("department", "")),
+            instructor=str(c.get("instructor", "")),
+            meeting_times=str(c.get("meeting_times", "")),
             similarity=round(float(c["_hybrid_score"]), 4),
             source=str(c.get("source", "")),
         )
@@ -263,7 +310,11 @@ def query(req: QueryRequest) -> QueryResponse:
     elapsed = time.perf_counter() - t0
     log.info("query=%r  dept=%r  hits=%d  %.2fs", req.q, req.department, len(courses), elapsed)
 
-    return QueryResponse(answer=answer, courses=courses)
+    return QueryResponse(
+        answer=answer,
+        courses=courses,
+        detected_code=detected_code
+    )
 
 
 # ---------------------------------------------------------------------------
