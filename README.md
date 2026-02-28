@@ -13,7 +13,8 @@ A RAG-powered academic course search tool that scrapes Brown University course d
 | Embedding model | `all-MiniLM-L6-v2` (sentence-transformers) | Strong quality/speed tradeoff; 384-dim, runs locally              |
 | Vector store    | FAISS (CPU)                                  | In-process, no infra needed; easy to persist to disk              |
 | Lexical search  | BM25 (rank-bm25)                             | Hybrid retrieval: catches exact keyword matches embeddings miss   |
-| Scraping        | BeautifulSoup4 + Requests + Playwright       | BS4/Requests for static pages; Playwright for JS-rendered content |
+| Scraping (CAB)  | Playwright + BeautifulSoup4                  | CAB sits behind AWS WAF; Playwright bypasses the JS challenge     |
+| Scraping (Bul.) | Requests + BeautifulSoup4                    | bulletin.brown.edu is fully static HTML — no JS rendering needed  |
 | LLM generation  | OpenAI API                                   | Handles final answer synthesis from retrieved context             |
 | Data validation | Pydantic v2                                  | FastAPI-native; validates course schema and API payloads          |
 
@@ -49,11 +50,19 @@ playwright install chromium      # for JS-rendered scraping
 ### Running
 
 ```bash
-# Backend (from project root)
-uvicorn app.main:app --reload
+# 1. Scrape & build data/courses.json  (run once, or on data refresh)
+python -m etl.scrape_bulletin        # → data/bulletin_courses.json
+python -m etl.scrape_cab             # → data/cab_courses.json  (launches Chromium)
+python -c "from etl.pipeline import run; run()"  # → data/courses.json
 
-# Frontend (separate terminal)
-streamlit run frontend/app.py
+# 2. Build FAISS index
+python -m rag.embedder               # → data/faiss.index + data/metadata.json
+
+# 3. Backend (from project root)
+uvicorn api.app:app --reload
+
+# 4. Frontend (separate terminal)
+streamlit run frontend/streamlit_app.py
 ```
 
 ---
@@ -130,7 +139,7 @@ Each package directory contains an `__init__.py`. The `data/` directory is popul
 └─────────────────────────────────────┘
 ```
 
-**ETL** — Two scrapers (one for CAB, one for Courses@Brown) extract course data and a normalizer reconciles the schemas into a single `data/courses.json`. Each course record includes code, title, description, instructor, schedule, and department.
+**ETL** — Two scrapers feed a merge pipeline. `scrape_bulletin.py` targets `bulletin.brown.edu` with plain Requests+BS4 (fully static HTML) and captures course code, title, description, prerequisites, instructor, and meeting times from the offerings table. `scrape_cab.py` targets `cab.brown.edu` via Playwright (required to bypass AWS WAF) and pulls catalog data from CourseLeaf's Ribbit API. `pipeline.py` merges both on normalized course code: Bulletin is the base record (richer schedule data); CAB back-fills any fields left empty. The `source` field on each record reflects provenance: `"Bulletin"`, `"CAB"`, or `"CAB+Bulletin"`.
 
 **Embedder** — Runs once (or on data refresh) to encode every course description with `all-MiniLM-L6-v2` and build a FAISS flat index. The index and a parallel metadata list are persisted to disk so the API loads them at startup without re-embedding.
 
@@ -151,7 +160,8 @@ Each package directory contains an `__init__.py`. The `data/` directory is popul
 * [X] Design architecture
 * [X] Scaffolding - project structure
 * [X] CAB scraper
-* [ ] ETL pipeline and storage
+* [X] Bulletin scraper
+* [X] ETL pipeline and storage
 * [ ] RAG pipeline
 * [ ] Test solutions in Playground notebook
 * [ ] Backend API
