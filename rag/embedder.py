@@ -1,8 +1,15 @@
 """
 Course embedding module.
 
-Encodes each course as a single text string:
-    "{title}. {description}. {department}"
+Encodes each course as a single text string including:
+    - course_code
+    - title
+    - department
+    - instructor
+    - meeting_times
+    - prerequisites
+    - description
+    - source
 
 Uses sentence-transformers all-MiniLM-L6-v2 (384-dim, runs locally).
 Persists:
@@ -26,13 +33,47 @@ MODEL_NAME = "all-MiniLM-L6-v2"
 
 
 def course_to_text(course: dict) -> str:
-    """Concatenate the fields most useful for semantic retrieval."""
-    parts = [
-        course.get("title", ""),
-        course.get("description", ""),
-        course.get("department", ""),
-    ]
-    return ". ".join(p for p in parts if p).strip()
+    """
+    Concatenate all course fields for embedding.
+    
+    Format includes: code, title, department, instructor, meeting times,
+    prerequisites, and description. Empty fields are cleanly omitted.
+    """
+    parts = []
+    
+    # Course code first (highest priority for exact matches)
+    if course.get("course_code"):
+        parts.append(course["course_code"])
+    
+    # Title
+    if course.get("title"):
+        parts.append(course["title"])
+    
+    # Department
+    if course.get("department"):
+        parts.append(f"Department: {course['department']}")
+    
+    # Instructor
+    if course.get("instructor"):
+        parts.append(f"Instructor: {course['instructor']}")
+    
+    # Meeting times
+    if course.get("meeting_times"):
+        parts.append(f"Meeting times: {course['meeting_times']}")
+    
+    # Prerequisites
+    if course.get("prerequisites"):
+        parts.append(f"Prerequisites: {course['prerequisites']}")
+    
+    # Source
+    if course.get("source"):
+        parts.append(f"Source: {course['source']}")
+    
+    # Description (usually largest field)
+    if course.get("description"):
+        parts.append(course["description"])
+    
+    return ". ".join(parts).strip()
 
 
 def load_courses(path: Path = COURSES) -> list[dict]:
