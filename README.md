@@ -150,7 +150,7 @@ Each package directory contains an `__init__.py`. The `data/` directory is popul
 * [X] ClaudeCode prompts for initial development
 * [X] Design architecture
 * [X] Scaffolding - project structure
-* [ ] CAB scraper
+* [X] CAB scraper
 * [ ] ETL pipeline and storage
 * [ ] RAG pipeline
 * [ ] Test solutions in Playground notebook
