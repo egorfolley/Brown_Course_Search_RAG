@@ -74,7 +74,7 @@ Each pipeline step is skipped if its output file already exists. To force a fres
 **Step 2 — Start the frontend** *(separate terminal)*
 
 ```bash
-streamlit run frontend/streamlit_app.py
+streamlit run frontend/ui.py
 ```
 
 ### API reference
@@ -121,7 +121,7 @@ Brown_course_search_RAG/
 ├── api/
 │   └── app.py                  # FastAPI app — POST /query endpoint
 ├── frontend/
-│   └── streamlit_app.py        # Streamlit UI — search bar, filters, results display
+│   └── ui.py                   # Streamlit UI — search bar, filters, results display
 ├── data/                       # Runtime-generated artifacts (git-ignored except .gitkeep)
 │   ├── courses.json            # Normalized course records (ETL output)
 │   ├── faiss.index             # Persisted FAISS flat index (embedder output)
