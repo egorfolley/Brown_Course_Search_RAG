@@ -14,7 +14,7 @@ A RAG-powered academic course search tool that scrapes Brown University course d
 | Vector store    | FAISS (CPU)                                  | In-process, no infra needed; easy to persist to disk              |
 | Lexical search  | BM25 (rank-bm25)                             | Hybrid retrieval: catches exact keyword matches embeddings miss   |
 | Scraping (CAB)  | Playwright + BeautifulSoup4                  | CAB sits behind AWS WAF; Playwright bypasses the JS challenge     |
-| Scraping (Bul.) | Requests + BeautifulSoup4                    | bulletin.brown.edu is fully static HTML — no JS rendering needed  |
+| Scraping (Bul.) | Requests + BeautifulSoup4                    | bulletin.brown.edu is fully static HTML — no JS rendering needed |
 | LLM generation  | OpenAI API                                   | Handles final answer synthesis from retrieved context             |
 | Data validation | Pydantic v2                                  | FastAPI-native; validates course schema and API payloads          |
 
