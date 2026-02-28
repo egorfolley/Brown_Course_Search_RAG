@@ -25,7 +25,7 @@ Use this app to search Brown courses with RAG.
 1. Start backend API in another terminal: `python app/app.py`
 2. Enter a query below (example: *machine learning classes on Fridays*)
 3. Optionally choose a department filter
-4. Click **Search**
+4. Press **Enter** in the query box (or click **Search**)
 
 ### Notes
 - This tool returns an LLM summary plus top retrieved courses.
@@ -45,12 +45,26 @@ def _load_departments() -> list[str]:
 departments = _load_departments()
 dept_options = ["All departments"] + departments
 
-query = st.text_input("Search query", placeholder="e.g. machine learning on Fridays")
+
+if "run_search" not in st.session_state:
+    st.session_state.run_search = False
+
+
+def _trigger_search() -> None:
+    st.session_state.run_search = True
+
+
+query = st.text_input(
+    "Search query",
+    placeholder="e.g. machine learning on Fridays",
+    on_change=_trigger_search,
+)
 dept = st.selectbox("Department", dept_options)
-submitted = st.button("Search")
+st.button("Search", on_click=_trigger_search)
 
 
-if submitted:
+if st.session_state.run_search:
+    st.session_state.run_search = False
     if not query.strip():
         st.warning("Please enter a search query.")
     else:
