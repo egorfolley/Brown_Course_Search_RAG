@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  backend:
+    build: .
+    container_name: brown-course-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    command: python app/app.py
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build: .
+    container_name: brown-course-frontend
+    ports:
+      - "8501:8501"
+    depends_on:
+      - backend
+    command: streamlit run frontend/ui.py --server.address=0.0.0.0
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - API_HOST=backend

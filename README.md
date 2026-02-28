@@ -4,7 +4,25 @@ RAG-powered semantic search for Brown University courses. Combines dual-source s
 
 ## Quick Start
 
-**Prerequisites:** Python 3.11+, OpenAI API key
+**Prerequisites:** Python 3.11+ (or Docker), OpenAI API key
+
+### Option 1: Docker (Recommended)
+
+```bash
+# Create .env file with your API key
+echo "OPENAI_API_KEY=sk-..." > .env
+
+# Run everything with one command
+docker-compose up --build
+
+# Access the app
+# Frontend: http://localhost:8501
+# API docs: http://localhost:8000/docs
+```
+
+To stop: `Ctrl+C` or `docker-compose down`
+
+### Option 2: Local Setup
 
 ```bash
 # Setup
@@ -12,14 +30,24 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium
 
-# Configure (create .env)
+# Configure
 echo "OPENAI_API_KEY=sk-..." > .env
 
-# Run backend (builds data on first run)
+# Terminal 1: Run backend (builds data on first run)
 python app/app.py
 
-# Run frontend (new terminal)
+# Terminal 2: Run frontend
 streamlit run frontend/ui.py
+```
+
+### Quick Commands (Makefile)
+
+```bash
+make run-docker    # Run with Docker
+make build         # Build Docker images
+make stop          # Stop containers
+make clean         # Remove data (force fresh scrape)
+make logs          # View container logs
 ```
 
 ## Tech Stack
@@ -162,6 +190,37 @@ Brown_course_search_RAG/
    - Submits queries to API, displays answer + retrieved courses
    - Shows similarity scores and sources for transparency
 
+## Testing
+
+Test coverage includes:
+
+- **Search pipeline** (`tests/test_search.py`): FAISS semantic search, BM25 lexical search, hybrid fusion
+- **ETL pipeline** (`tests/test_etl.py`): Data validation, merge logic, deduplication
+- **API endpoints** (`tests/test_api.py`): Request validation, response format, error handling
+
+**Run tests:**
+
+```bash
+# Install test dependencies (already in requirements.txt)
+pip install -r requirements.txt
+
+# Run all tests
+pytest
+
+# Run with verbose output
+pytest -v
+
+# Run specific test file
+pytest tests/test_search.py
+```
+
+**Example output:**
+
+```
+tests/test_search.py::TestVectorStore::test_semantic_search PASSED
+tests/test_api.py::TestQueryEndpoint::test_query_endpoint_exists PASSED
+```
+
 ## TO DO
 
 * [X] Technical setup - choose embedding model, vector store, LLM, scraping tools/ETL
@@ -178,4 +237,6 @@ Brown_course_search_RAG/
 * [X] Backend API
 * [X] UI
 * [X] Polish - deployment + docs + report
+* [ ] Docker
+* [ ] Tests
 * [ ] Loom video
