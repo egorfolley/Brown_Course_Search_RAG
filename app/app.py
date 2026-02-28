@@ -23,6 +23,7 @@ Logs each query and wall-clock response time to stdout and logs/app.log
 """
 
 import json
+import asyncio
 import logging
 import logging.handlers
 import sys
@@ -269,8 +270,24 @@ def query(req: QueryRequest) -> QueryResponse:
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _launch_server() -> None:
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, reload=False)
+    server = uvicorn.Server(config)
+
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        uvicorn.run(app, host="0.0.0.0", port=8000, reload=False)
+        return
+
+    log.warning(
+        "Detected an existing asyncio event loop; serving with create_task() instead of asyncio.run()."
+    )
+    asyncio.create_task(server.serve())
+
+
 if __name__ == "__main__":
     log.info("=== Brown Course Search — starting up ===")
     _ensure_data()
     log.info("=== All data ready — launching server on http://0.0.0.0:8000 ===")
-    uvicorn.run("app.app:app", host="0.0.0.0", port=8000, reload=False)
+    _launch_server()
