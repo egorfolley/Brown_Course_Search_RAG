@@ -77,16 +77,6 @@ Each pipeline step is skipped if its output file already exists. To force a fres
 streamlit run frontend/streamlit_app.py
 ```
 
-**Manual step-by-step** *(optional, if you want to run stages independently)*
-
-```bash
-python -m etl.scrape_bulletin   # → data/bulletin_courses.json  (~5 min)
-python -m etl.scrape_cab        # → data/cab_courses.json       (launches Chromium, ~15 min)
-python -c "from etl.pipeline import run; run()"  # → data/courses.json
-python -m rag.embedder          # → data/faiss.index + data/metadata.json
-uvicorn api.app:app --reload    # serve without re-running pipeline
-```
-
 ### API reference
 
 `POST /query`
@@ -211,7 +201,7 @@ Each package directory contains an `__init__.py`. The `data/` directory is popul
 * [X] Bulletin scraper
 * [X] ETL pipeline and storage
 * [X] RAG pipeline
-* [ ] Test solutions in Playground notebook
+* [X] Test solutions in Playground notebook
 * [X] Backend API
 * [ ] UI
 * [ ] Polish - deployment + docs + report
