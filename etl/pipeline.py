@@ -11,6 +11,7 @@ Merge strategy:
 
 import json
 from pathlib import Path
+from typing import Any
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 CAB_FILE = DATA_DIR / "cab_courses.json"
@@ -25,7 +26,7 @@ MERGE_FIELDS = ("description", "prerequisites", "title", "department",
 # Helpers
 # ---------------------------------------------------------------------------
 
-def load(path: Path) -> list[dict]:
+def load(path: Path) -> list[dict[str, Any]]:
     """Load a JSON array from disk; return [] if the file doesn't exist."""
     if not path.exists():
         return []
@@ -41,7 +42,7 @@ def normalize_code(code: str) -> str:
 # Core merge
 # ---------------------------------------------------------------------------
 
-def merge_courses(cab: list[dict], bulletin: list[dict]) -> list[dict]:
+def merge_courses(cab: list[dict[str, Any]], bulletin: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Merge two lists of course dicts by normalized course_code.
 
@@ -77,7 +78,7 @@ def merge_courses(cab: list[dict], bulletin: list[dict]) -> list[dict]:
 # Entry point (importable, not a CLI)
 # ---------------------------------------------------------------------------
 
-def run() -> list[dict]:
+def run() -> list[dict[str, Any]]:
     """Load both scraped files, merge, save courses.json, return the result."""
     cab = load(CAB_FILE)
     bulletin = load(BULLETIN_FILE)
