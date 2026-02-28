@@ -1,0 +1,30 @@
+# Web framework & server
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+
+# Frontend
+streamlit>=1.40.0
+
+# Embeddings
+sentence-transformers>=3.3.0
+
+# Vector store
+faiss-cpu>=1.9.0
+numpy>=2.0.0
+
+# Scraping
+beautifulsoup4>=4.12.0
+requests>=2.32.0
+playwright>=1.49.0
+
+# Hybrid search (BM25 lexical)
+rank-bm25>=0.2.2
+
+# LLM generation
+openai>=1.58.0
+
+# Data validation
+pydantic>=2.10.0
+
+# Config
+python-dotenv>=1.0.0
