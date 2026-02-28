@@ -2,10 +2,10 @@
 FastAPI application — single entry point for the full pipeline.
 
 Run as a script to orchestrate all steps then serve:
-    python api/app.py
+    python app/app.py
 
 Or run as a module if data is already built:
-    uvicorn api.app:app --reload
+    uvicorn app.app:app --reload
 
 Pipeline steps (each skipped if output already exists):
     1. Scrape bulletin.brown.edu  → data/bulletin_courses.json
@@ -38,7 +38,7 @@ from fastapi import FastAPI, HTTPException
 from openai import OpenAI
 from pydantic import BaseModel
 
-# Ensure project root is on sys.path when running as a script (python api/app.py)
+# Ensure project root is on sys.path when running as a script (python app/app.py)
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from rag.vector_store import VectorStore
@@ -273,4 +273,4 @@ if __name__ == "__main__":
     log.info("=== Brown Course Search — starting up ===")
     _ensure_data()
     log.info("=== All data ready — launching server on http://0.0.0.0:8000 ===")
-    uvicorn.run("api.app:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("app.app:app", host="0.0.0.0", port=8000, reload=False)

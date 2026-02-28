@@ -62,7 +62,7 @@ All commands are run from the project root with the virtualenv active.
 **Step 1 — Start the API** *(builds all data automatically on first run)*
 
 ```bash
-python api/app.py
+python app/app.py
 # Scrapes Bulletin (~5 min) and CAB (~15 min, launches Chromium) if data is missing
 # Builds embeddings + FAISS index if missing
 # Starts API on http://0.0.0.0:8000
