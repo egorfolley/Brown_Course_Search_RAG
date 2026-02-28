@@ -231,23 +231,3 @@ def scrape_all() -> list[dict]:
         time.sleep(REQUEST_DELAY)
 
     return all_courses
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
-
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
-    DATA_DIR.mkdir(exist_ok=True)
-
-    log.info("Starting Bulletin scrape  |  index=%s", DEPT_INDEX)
-    courses = scrape_all()
-    log.info("Total courses collected: %d", len(courses))
-
-    OUTPUT_FILE.write_text(json.dumps(courses, indent=2, ensure_ascii=False))
-    log.info("Saved → %s", OUTPUT_FILE)
-
-
-if __name__ == "__main__":
-    main()
