@@ -6,12 +6,15 @@ and retrieved courses as a table.
 """
 
 import json
+import os
 from pathlib import Path
 
 import requests
 import streamlit as st
 
-API_URL = "http://localhost:8000/query"
+# Use environment variable for Docker compatibility
+API_HOST = os.getenv("API_HOST", "localhost")
+API_URL = f"http://{API_HOST}:8000/query"
 COURSES_FILE = Path(__file__).parent.parent / "data" / "courses.json"
 
 st.set_page_config(page_title="Brown Course Search", layout="centered")
