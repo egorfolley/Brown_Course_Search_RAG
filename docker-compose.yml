@@ -15,9 +15,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/docs"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+      timeout: 30s
+      retries: 10
+      start_period: 300s  # 5 min for initial data generation
 
   frontend:
     build: .
@@ -25,7 +25,8 @@ services:
     ports:
       - "8501:8501"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     volumes:
       - ./data:/app/data
     command: streamlit run frontend/ui.py --server.address=0.0.0.0

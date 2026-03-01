@@ -12,7 +12,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright and Chromium (for CAB scraping)
-RUN playwright install --with-deps chromium
+# Commented out for faster builds - CAB scraper returns 0 courses anyway
+# Uncomment if you need CAB scraping: RUN playwright install --with-deps chromium
 
 # Copy application code
 COPY . .
