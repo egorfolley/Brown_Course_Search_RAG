@@ -177,7 +177,7 @@ Brown_course_search_RAG/
 └──────┬───────┘
        ↓
 ┌──────────────┐
-│  Streamlit   │  Display answer + retrieved courses
+│  Streamlit   │  UI Display answer + retrieved courses
 └──────────────┘
 ```
 
@@ -246,6 +246,7 @@ tests/test_api.py::TestQueryEndpoint::test_query_endpoint_exists PASSED
 To integrate a new course data source:
 
 1. **Create a scraper** in `etl/`:
+
    ```python
    # etl/scrape_newsource.py
    def scrape_all() -> list[dict]:
@@ -253,16 +254,16 @@ To integrate a new course data source:
        # Your scraping logic here
        return courses
    ```
-
 2. **Update ETL pipeline** in `etl/pipeline.py`:
+
    ```python
    from etl.scrape_newsource import scrape_all as scrape_newsource
-   
+
    # In run():
    newsource_courses = scrape_newsource()  # Load & merge like CAB/Bulletin
    ```
-
 3. **Rebuild data**:
+
    ```bash
    # Force fresh scrape
    make clean
@@ -271,8 +272,7 @@ To integrate a new course data source:
 
 ## TO DO
 
-* [X] Technical setup - choose embedding model, vector store, LLM, scraping tools/ETL
-  * [X] FastAPI + Streamlit for simplicity
+* [X] Technical setup - choose embedding model, vector store, FastAPI + Streamlit for simplicity
   * [ ] Further UI modification to React if needed
 * [X] ClaudeCode prompts for initial development
 * [X] Design architecture
