@@ -2,6 +2,8 @@
 
 RAG-powered semantic search for Brown University courses. Combines dual-source scraping (Bulletin + CAB), hybrid retrieval (FAISS + BM25), and LLM synthesis to deliver intelligent course recommendations.
 
+> ## [Loom Video Walkthrough](https://www.loom.com/share/52c6ff67923746e4a02db04d7b116ce9)
+
 ## Quick Start
 
 **Prerequisites:** Python 3.11+ (or Docker), OpenAI API key
@@ -287,4 +289,4 @@ To integrate a new course data source:
 * [X] Polish - deployment + docs + report
 * [X] Docker
 * [X] Tests
-* [ ] Loom video
+* [X] Loom video
